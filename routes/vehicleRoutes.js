@@ -189,25 +189,28 @@ router.get('/getinfo/:id', async (req, res) => {
 // GET /api/vehicles/trackdata/:id?date=YYYY-MM-DD&startTime=HH:MM&endTime=HH:MM
 router.get('/trackdata/:id', async (req, res) => {
   try {
-    const vehicleId = (req.params.id);
-    const date = req.query.date ? new Date(req.query.date) : new Date();
+    const vehicleId = req.params.id;
+    const inputDate = req.query.date || new Date().toISOString().split('T')[0]; // default to today
+
     const startTime = req.query.startTime || '00:00';
     const endTime = req.query.endTime || '23:59';
 
+    const [year, month, day] = inputDate.split('-').map(Number);
     const [startHour, startMinute] = startTime.split(':').map(Number);
     const [endHour, endMinute] = endTime.split(':').map(Number);
 
-    const startDateTime = new Date(date);
-    startDateTime.setHours(startHour, startMinute, 0, 0);
+    // Build in UTC
+    const startDateTime = new Date(Date.UTC(year, month - 1, day, startHour, startMinute, 0, 0));
+    const endDateTime = new Date(Date.UTC(year, month - 1, day, endHour, endMinute, 59, 999));
+    
+    console.log('Start:', startDateTime.toISOString().replace('Z', '+00:00'));
+    console.log('End:', endDateTime.toISOString().replace('Z', '+00:00'));
 
-    const endDateTime = new Date(date);
-    endDateTime.setHours(endHour, endMinute, 59, 999);
-
+    //Add less than equal to endDateTime
     const trackData = await TrackPoint.find({
       vehicleId,
       timestamp: {
-        $gte: startDateTime,
-        $lte: endDateTime
+        $gte: new Date(startDateTime.toISOString().replace('Z', '+00:00')),
       }
     });
 
@@ -220,6 +223,8 @@ router.get('/trackdata/:id', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+
 
 module.exports = router;
 

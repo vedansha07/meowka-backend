@@ -40,117 +40,141 @@ VEHICLE_ROUTES = {
     "VH003": ROUTE_2
 }
 
-def generate_vehicle_data(vehicle_id, start_time, points, duration_minutes=120):
+        
+        # print(f"Generated {len(all_data)} tracking points for vehicle {vehicle_id}")
+        
+        # # Submit data to API
+        # for point in all_data:
+        #     try:
+        #         response = requests.post(
+        #             f"{BASE_URL}/addinfo/{vehicle_id}", 
+        #             json=point
+        #         )
+                
+        #         if response.status_code == 200:
+        #             print(f"Successfully added point for {vehicle_id} at {point['timestamp']}")
+        #         else:
+        #             print(f"Failed to add point: {response.status_code} - {response.text}")
+                
+        #         # Small delay to prevent overwhelming the server
+        #         time.sleep(0.2)
+                
+        #     except Exception as e:
+        #         print(f"Error adding point: {str(e)}")
+
+from datetime import datetime, timedelta
+
+def generate_timestamps(date_str, interval_seconds=10):
     """
-    Generate tracking data for a vehicle over a specific time period
+    Generate timestamps from 12:00 AM to 12:00 PM on a given date.
     
-    Args:
-        vehicle_id: ID of the vehicle
-        start_time: Start time for the data generation
-        points: List of coordinate points [longitude, latitude]
-        duration_minutes: Total duration to spread the points over in minutes
+    Parameters:
+        date_str (str): Date in 'YYYY-MM-DD' format
+        interval_seconds (int): Gap between timestamps in seconds
     
     Returns:
-        List of tracking data points with timestamps
+        list of str: List of ISO-formatted timestamps
     """
-    data_points = []
-    
-    # Calculate time interval between points
-    time_interval = duration_minutes * 60 / len(points)
-    
-    # Base fuel levels and variations
-    base_fuel = 75 if vehicle_id == "VH002" else 90
-    
-    for i, point in enumerate(points):
-        # Calculate timestamp for this point
-        point_time = start_time + timedelta(seconds=i * time_interval)
-        
-        # Calculate speed (varying between 0-60 km/h with occasional stops)
-        if i > 0 and i < len(points) - 1:
-            # Normal movement
-            if random.random() < 0.1:  # 10% chance of stopping/slow traffic
-                speed = random.uniform(0, 5)
-            else:
-                speed = random.uniform(15, 60)
-        else:
-            # Starting or ending point - slower speed
-            speed = random.uniform(0, 15)
-        
-        # Calculate remaining fuel (gradually decreasing)
-        fuel_consumption_rate = 0.02  # % per point
-        random_variation = random.uniform(-0.5, 0.5)  # Small random variation
-        fuel_left = max(0, base_fuel - (i * fuel_consumption_rate) + random_variation)
-        
-        data_points.append({
-            "latitude": point[0],  # Longitude
-            "longitude": point[1],  # Latitude
-            "speed": round(speed, 2),
-            "fuelLeft": round(fuel_left, 2),
-            "timestamp": point_time.isoformat()
-        })
-    
-    return data_points
+    start_time = datetime.strptime(date_str + "T00:00:00", "%Y-%m-%dT%H:%M:%S")
+    end_time = datetime.strptime(date_str + "T00:00:00", "%Y-%m-%dT%H:%M:%S")
+    end_time += timedelta(days=1)
 
-def simulate_one_day():
-    """Simulate tracking data for one full day"""
-    # Define yesterday's date (to ensure it's "today" in the system)
-    yesterday = datetime.now() - timedelta(days=1)
-    start_time = yesterday.replace(hour=8, minute=0, second=0, microsecond=0)  # Start at 8 AM
-    
-    for vehicle_id in VEHICLE_IDS:
-        # Morning journey (8 AM - 10 AM)
-        route = VEHICLE_ROUTES[vehicle_id]
-        morning_data = generate_vehicle_data(
-            vehicle_id, 
-            start_time, 
-            route,
-            duration_minutes=120
-        )
-        
-        # Afternoon journey (2 PM - 4 PM)
-        afternoon_start = start_time.replace(hour=14, minute=0)
-        # Use reversed route for return journey
-        afternoon_data = generate_vehicle_data(
-            vehicle_id, 
-            afternoon_start, 
-            list(reversed(route)),
-            duration_minutes=120
-        )
-        
-        # Evening journey (6 PM - 8 PM)
-        evening_start = start_time.replace(hour=18, minute=0)
-        evening_data = generate_vehicle_data(
-            vehicle_id, 
-            evening_start, 
-            route + list(reversed(route[:10])),  # Different route variation
-            duration_minutes=120
-        )
-        
-        # Combine all journeys
-        all_data = morning_data + afternoon_data + evening_data
-        
-        print(f"Generated {len(all_data)} tracking points for vehicle {vehicle_id}")
-        
-        # Submit data to API
-        for point in all_data:
-            try:
-                response = requests.post(
-                    f"{BASE_URL}/addinfo/{vehicle_id}", 
-                    json=point
-                )
-                
-                if response.status_code == 200:
-                    print(f"Successfully added point for {vehicle_id} at {point['timestamp']}")
-                else:
-                    print(f"Failed to add point: {response.status_code} - {response.text}")
-                
-                # Small delay to prevent overwhelming the server
-                time.sleep(0.2)
-                
-            except Exception as e:
-                print(f"Error adding point: {str(e)}")
+    timestamps = []
+    current_time = start_time
+
+    while current_time <= end_time:
+        timestamps.append(current_time.isoformat())
+        current_time += timedelta(seconds=interval_seconds)
+
+    return timestamps
+
+
+def smooth_route_generator(route, step_size=0.00005):
+        """
+        Smoothly iterate through a list of coordinates, interpolating between points.
+
+        Parameters:
+            route (list): List of [lon, lat] points
+            step_size (float): Small step for interpolation (smaller = smoother)
+
+        Yields:
+            tuple: (longitude, latitude)
+        """
+        import math
+
+        def interpolate(p1, p2, t):
+            """Linearly interpolate between p1 and p2 with t in [0, 1]"""
+            lon = p1[0] + (p2[0] - p1[0]) * t
+            lat = p1[1] + (p2[1] - p1[1]) * t
+            return (lon, lat)
+
+        def distance(p1, p2):
+            """Euclidean distance"""
+            return math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+
+        idx = 0
+        while True:
+            start = route[idx]
+            end = route[(idx + 1) % len(route)]
+            dist = distance(start, end)
+            steps = max(int(dist / step_size), 1)
+
+            for i in range(steps):
+                t = i / steps
+                yield interpolate(start, end, t)
+
+            idx = (idx + 1) % len(route)
+
+
+
+
+
+def fill_data(timestamp_list , vehicle_id,route):
+    gen = smooth_route_generator(route)
+
+    speed = 50
+    fuel = 43
+
+    for timestamp in timestamp_list:
+        # Randomly increase or decrease speed by up to 5 units
+        speed += random.uniform(-3, 3)
+        speed = max(speed, 0)  # prevent negative speed
+
+        # Randomly increase or decrease fuel by up to 1 unit
+        fuel += random.uniform(-0.5, 0.5)
+        fuel = max(fuel, 0)  # prevent negative fuel
+
+        print(f"Timestamp: {timestamp}, Speed: {speed:.2f}, Fuel: {fuel:.2f}")
+        print(next(gen))
+        point = {
+            "latitude": next(gen)[1],
+            "longitude": next(gen)[0],
+            "timestamp": timestamp,
+            "speed": speed,
+            "fuel": fuel
+        }
+        try:
+            response = requests.post(
+                f"{BASE_URL}/addinfo/{vehicle_id}", 
+                json=point
+            )
+            if response.status_code == 200:
+                print(f"Successfully added point for {vehicle_id} at {point['timestamp']}")
+            else:
+                print(f"Failed to add point: {response.status_code} - {response.text}")
+
+            time.sleep(0.02)
+        except Exception as e:
+            print(f"Error adding point: {str(e)}")
+
+
+
 
 if __name__ == "__main__":
     print("Starting vehicle tracking data simulation...")
-    simulate_one_day()
+    # simulate_one_day()
+    ts_list = generate_timestamps("2025-04-14");
+
+    for vehicle_id, route in VEHICLE_ROUTES.items():
+        fill_data(ts_list, vehicle_id,route)
     print("Simulation complete!")
